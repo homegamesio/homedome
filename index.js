@@ -34,10 +34,10 @@ console.log('is it code?');
 
                 try {
                     const sourceNodeModules = '/Users/josephgarcia/homegames/homedome/node_modules';
-                    fs.symlink(sourceNodeModules, ting.path + '/node_modules', 'dir', (err) => {
+                    fs.symlink(sourceNodeModules, './' + ting.path + '/node_modules', 'dir', (err) => {
                         console.log("DSFDSFDSF");
                         console.log(err);
-                        const gameIndex = require(ting.path);
+                        const gameIndex = require('./' + ting.path);
                         console.log("GAME INDEXXX");
                         console.log(gameIndex);
                     });
