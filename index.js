@@ -14,14 +14,13 @@ const GITHUB_USER = 'GITHUB_USER';
 const GITHUB_KEY = 'GITHUB_KEY';
 const REQUEST_QUEUE_URL = 'REQUEST_QUEUE_URL';
 
-
 const params = {
 	QueueUrl: REQUEST_QUEUE_URL,
 	MaxNumberOfMessages: 1,
 	VisibilityTimeout: 60
 };
 
-const sendVerificationEmail = (emailAddress, code) => new Promise((resolve, reject) => {
+const sendVerificationEmail = (emailAddress, code, requestId) => new Promise((resolve, reject) => {
 	const ses = new aws.SES({region: 'us-west-2'});
         const params = {
             Destination: {
@@ -33,7 +32,7 @@ const sendVerificationEmail = (emailAddress, code) => new Promise((resolve, reje
                 Body: {
                     Html: {
                         Charset: 'UTF-8',
-                        Data: `<html><body><a href="https://landlord.homegames.io/verify_publish_request?code=${code}">here</a> to confirm this submission</body></html>`
+                        Data: `<html><body><a href="https://landlord.homegames.io/verify_publish_request?code=${code}&requestId=${requestId}">here</a> to confirm this submission</body></html>`
                     }   
                 },
                 Subject: {
@@ -47,15 +46,6 @@ const sendVerificationEmail = (emailAddress, code) => new Promise((resolve, reje
             err ? reject(err) : resolve(data);
         });
 });
-
-//const testEvent = {"sourceInfoHash":"c395eb3e071efaa2f5a97e06c4cfba95","gameId":"bfd25172863c6f5e7dee90ac41e6b421"};
-
-// succeed
-const testEvent = {"sourceInfoHash":"e3983ea094207c602038e90639e2304e","gameId":"a67ca99c91000eb95621b6b15ffd6da5"};
-
-//fail
-//const testEvent = {"sourceInfoHash":"0be40b1e081445b27bfec4ba8ff434f6","gameId":"576ac0a1863709d815bf6cbbb98411eb"};
-
 
 const { parseOutput } = require('./strace-parser');
 
@@ -117,6 +107,8 @@ const getPublishRequestRecord = (gameId, sourceInfoHash) => new Promise((resolve
             } else {
                 if (result.Item) {
 		    const _item = result.Item;
+			console.log('item');
+			console.log(_item);
                     resolve({
 			requestId: _item.request_id.S,
 			repoOwner: _item.repo_owner.S,
@@ -267,13 +259,57 @@ const getCommit = (owner, repo, commit = undefined) => new Promise((resolve, rej
     });
 });
 
+const getS3Url = (gameId, requestId) => {
+	return `https://hg-games.s3-us-west-2.amazonaws.com/${gameId}/${requestId}/code.zip`;
+};
+
+const uploadZip = (zipPath, gameId, requestId) => new Promise((resolve, reject) => {
+	const s3 = new aws.S3({region: 'us-west-2'});
+	fs.readFile(zipPath, (err, buf) => {
+		if (err) {
+			console.log(`read file error ${err}`);
+			reject();
+		} else {
+			const params = {
+				Body: buf,
+				ACL: 'public-read',
+				Bucket: 'hg-games',
+				Key: `${gameId}/${requestId}/code.zip`
+			};
+
+			s3.putObject(params, (s3Err, s3Data) => {
+				console.log('put object result');
+				console.log(s3Err);
+				console.log(s3Data);
+				if (s3Err) {
+					console.log(`s3 error ${s3Err}`);
+					reject();
+				} else {
+					resolve();
+				}
+			});
+		}
+	});
+});
+
 
 const downloadCode = (publishRequest) => new Promise((resolve, reject) => {
 	console.log('i am downloading code');
 	emitEvent(publishRequest.requestId, EVENT_TYPE.DOWNLOAD);
 	getBuild(publishRequest.repoOwner, publishRequest.repoName, publishRequest.commitHash).then((pathInfo) => {
-		resolve(pathInfo);
-	});
+		emitEvent(publishRequest.requestId, 'UPLOAD_ZIP');
+		uploadZip(pathInfo.zipPath, publishRequest.gameId, publishRequest.requestId).then(() => {
+			console.log('uploaded zip for request ' + publishRequest.requestId);
+			resolve(pathInfo);
+		}).catch(err => {
+			console.log('failed to upload zip');
+			console.log(err);
+			reject();
+		});
+	}).catch(err => {
+		console.log('get build error ' + err);
+		reject();
+	});;
 });
 
 const checkIndex = (directory) => new Promise((resolve, reject) => {
@@ -288,6 +324,9 @@ const checkIndex = (directory) => new Promise((resolve, reject) => {
 
 const homegamesPoke = (publishRequest, entryPoint, gameId, sourceInfoHash) => new Promise((resolve, reject) => {
 	const cmd = 'strace node tester ' + entryPoint;
+
+	console.log('running command');
+	console.log(cmd);
 
 	dns.resolve('landlord.homegames.io', 'A', (err, hosts) => {
 		const whitelistedIps = hosts;
@@ -336,6 +375,10 @@ const pokeCode = (publishRequest, codePath, gameId, sourceInfoHash) => new Promi
 	checkIndex(codePath.path).then(entryPoint => {
 		homegamesPoke(publishRequest, entryPoint, gameId, sourceInfoHash).then(() => {
 			resolve();
+		}).catch(err => {
+			console.log("Failed homegames poke");
+			console.log(err);
+			reject();
 		});
 	}).catch(() => {
 		emitEvent(publishRequest.requestId, EVENT_TYPE.FAILURE, 'No index.js found');
@@ -344,12 +387,7 @@ const pokeCode = (publishRequest, codePath, gameId, sourceInfoHash) => new Promi
 });
 
 const homegameCheck = (entryPointPath) => new Promise((resolve, reject) => {
-	console.log('i am verifying homegames code');
-	resolve();
-});
-
-const publishVersion = (publishRequest) => new Promise((resolve, reject) => {
-	console.log('i am publishing version of code');
+	console.log('i am verifying homegames code. dont know what that means yet');
 	resolve();
 });
 
@@ -385,7 +423,7 @@ const sendVerifyRequest = (publishRequest) => new Promise((resolve, reject) => {
 	emitEvent(publishRequest.requestId, EVENT_TYPE.VERIFY, 'Sent approval email to repo owner');
 	getOwnerEmail(publishRequest.repoOwner).then((email) => {
 		createCode(publishRequest.requestId).then((code) => {
-			sendVerificationEmail(email, code).then(() => {
+			sendVerificationEmail(email, code, publishRequest.requestId).then(() => {
 				resolve();
 			});
 		});
@@ -424,10 +462,6 @@ const handlePublishEvent = (publishEvent) => new Promise((resolve, reject) => {
 
 	updatePublishRequestState(gameId, sourceInfoHash, REQUEST_STATUS.PROCESSING).then(() => {
 		getPublishRequestRecord(gameId, sourceInfoHash).then((requestRecord) => {
-//			requestRecord.commitHash = '106f3f49237d1a3176cd60df0f479e25f09a8491';
-//			requestRecord.repoName = 'OpenDMARC';
-//			requestRecord.repoOwner = 'trusteddomainproject';
-
 			console.log('request record');
 			console.log(requestRecord);
 			downloadCode(requestRecord).then(pathInfo => {
@@ -436,8 +470,6 @@ const handlePublishEvent = (publishEvent) => new Promise((resolve, reject) => {
 						sendVerifyRequest(requestRecord).then(() => {
 							updatePublishRequestState(gameId, sourceInfoHash, REQUEST_STATUS.PENDING_APPROVAL);
 						});
-						//publishVersion().then(() => {
-						//});
 					}).catch(err => {
 						console.error('failed homegames check');
 						console.log(err);
@@ -476,5 +508,3 @@ setInterval(() => {
 		}
 	});
 }, 5000);
-
-//handlePublishEvent(testEvent);
