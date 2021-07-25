@@ -8,11 +8,6 @@ const archiver = require('archiver');
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 
-const sqs = new aws.SQS({region: 'us-west-2'});
-
-const GITHUB_USER = 'GITHUB_USER';
-const GITHUB_KEY = 'GITHUB_KEY';
-const REQUEST_QUEUE_URL = 'REQUEST_QUEUE_URL';
 
 const params = {
 	QueueUrl: REQUEST_QUEUE_URL,
@@ -115,7 +110,7 @@ const getPublishRequestRecord = (gameId, sourceInfoHash) => new Promise((resolve
 			created: _item.created.N,
 			repoName: _item.repo_name.S,
 			requester: _item.requester.S,
-			state: _item.state.S,
+			status: _item.status.S,
 			gameId: _item.game_id.S,
 			commitHash: _item.commit_hash.S
 		    });
@@ -348,24 +343,30 @@ const homegamesPoke = (publishRequest, entryPoint, gameId, sourceInfoHash) => ne
 				}	
 			},
 			'open': (line) => {
-				console.log('not sure what to do here yet: ' + line);
+//				console.log('not sure what to do here yet: ' + line);
 			},
 			'read': (line) => {
-				console.log('not sure what to do here yet: ' + line);
+//				console.log('not sure what to do here yet: ' + line);
 			}
 		};
-		exec(cmd, (err, stdout, straceOutput) => {
-			parseOutput(straceOutput, listeners);
-			console.log('stdout');
-			console.log(stdout);
-			console.log('err');
+		try {
+			exec(cmd, {maxBuffer: 1024 * 10000}, (err, stdout, straceOutput) => {
+				parseOutput(straceOutput, listeners);
+				console.log('stdout');
+				console.log(stdout);
+				console.log('error');
+				console.log(err);
+
+				if (failed || err) {
+					reject();
+				} else {
+					resolve();
+				}
+			});	
+		} catch (err) {
+			console.log('is this where it fails');
 			console.log(err);
-			if (failed) {
-				reject();
-			} else {
-				resolve();
-			}
-		});	
+		}
 	});
 });
 
@@ -490,6 +491,7 @@ const handlePublishEvent = (publishEvent) => new Promise((resolve, reject) => {
 });
 
 setInterval(() => {
+	const sqs = new aws.SQS({region: 'us-west-2'});
 	sqs.receiveMessage(params, (err, data) => {
 		console.log(err);
 		console.log(data);
