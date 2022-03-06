@@ -4,8 +4,14 @@ const fs = require('fs');
 
 const runTest = (game) => {
 	const gameRoot = game.getRoot && game.getRoot();
-	if (!gameRoot) {
-		throw new Error('No game root');
+	if (!game.getLayers) {
+		throw new Error('No getLayers method found');
+	} else {
+		game.getLayers().forEach(layer => {
+			if (!layer.root) {
+				throw new Error("No root found for layer");
+			}
+		});
 	}
 };
 
@@ -37,4 +43,3 @@ if (gameModulePath) {
 } else {
     console.log('no path');
 }
-

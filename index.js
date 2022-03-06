@@ -8,14 +8,13 @@ const archiver = require('archiver');
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 
-
 const params = {
 	QueueUrl: REQUEST_QUEUE_URL,
 	MaxNumberOfMessages: 1,
 	VisibilityTimeout: 60
 };
 
-const sendVerificationEmail = (emailAddress, code, requestId) => new Promise((resolve, reject) => {
+const sendVerificationEmail = (emailAddress, code, requestId, requester, repoName, commitHash) => new Promise((resolve, reject) => {
 	const ses = new aws.SES({region: 'us-west-2'});
         const params = {
             Destination: {
@@ -27,12 +26,12 @@ const sendVerificationEmail = (emailAddress, code, requestId) => new Promise((re
                 Body: {
                     Html: {
                         Charset: 'UTF-8',
-                        Data: `<html><body><a href="https://landlord.homegames.io/verify_publish_request?code=${code}&requestId=${requestId}">here</a> to confirm this submission</body></html>`
+                        Data: `<html><body>Homegames user ${requester} has submitted a game publishing request based on commit ${commitHash} of your GitHub repository ${repoName}.<br /><br />To approve this request, please click <a href="https://landlord.homegames.io/verify_publish_request?code=${code}&requestId=${requestId}">here</a>.<br /><br />Send an email to support@homegames.io if you need any assistance.</body></html>`
                     }   
                 },
                 Subject: {
                     Charset: 'UTF-8',
-                    Data: 'Testing'
+                    Data: 'Homegames Publishing Request'
                 }
             },
             Source: 'landlord@homegames.io'
@@ -424,7 +423,7 @@ const sendVerifyRequest = (publishRequest) => new Promise((resolve, reject) => {
 	emitEvent(publishRequest.requestId, EVENT_TYPE.VERIFY, 'Sent approval email to repo owner');
 	getOwnerEmail(publishRequest.repoOwner).then((email) => {
 		createCode(publishRequest.requestId).then((code) => {
-			sendVerificationEmail(email, code, publishRequest.requestId).then(() => {
+			sendVerificationEmail(email, code, publishRequest.requestId, publishRequest.requester, publishRequest.repoName, publishRequest.commitHash).then(() => {
 				resolve();
 			});
 		});
@@ -495,7 +494,7 @@ setInterval(() => {
 	sqs.receiveMessage(params, (err, data) => {
 		console.log(err);
 		console.log(data);
-		if (data.Messages) {
+		if (data && data.Messages) {
 			const request = JSON.parse(data.Messages[0].Body);
 			handlePublishEvent(request);
 			const deleteParams = {
@@ -509,4 +508,4 @@ setInterval(() => {
 	    		});
 		}
 	});
-}, 5000);
+}, 60 * 1000);
