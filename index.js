@@ -126,14 +126,15 @@ const EVENT_TYPE = {
 	VERIFY: "VERIFY",
 	PUBLISH: "PUBLISH",
 	FAILURE: "FAILURE",
-	SUCCESS: "SUCCESS"
+	SUCCESS: "SUCCESS",
+	ERROR: "ERROR"
 };
 
 const REQUEST_STATUS = {
 	SUBMITTED: "SUBMITTED",
 	PROCESSING: "PROCESSING",
 	FAILED: "FAILED",
-	PENDING_APPROVAL: "PENDING_APPROVAL",
+	PENDING_CONFIRMATION: "PENDING_CONFIRMATION",
 	APPROVED: "APPROVED",
 	PUBLISHED: "PUBLISHED"
 };
@@ -220,9 +221,18 @@ const getBuild = (owner, repo, commit = undefined) => new Promise((resolve, reje
             path: dir
         }));
 
-        stream.on('finish', () => {
-            archive.directory(dir, false);
+	stream.on('end', () => {console.log('uhh end?')})
+	stream.on('close', () => {
+                fs.readdir(dir, (err, files) => {
+		const projectRoot = `${dir}/${files[0]}`;
+            archive.file(projectRoot + '/index.js', { name: 'index.js' } );
+            archive.directory(projectRoot + '/src', 'src');
             archive.finalize();
+	})
+});
+
+        stream.on('finish', () => {
+		console.log('finishedddd');
         });
 
         archive.pipe(output);
@@ -351,13 +361,12 @@ const homegamesPoke = (publishRequest, entryPoint, gameId, sourceInfoHash) => ne
 		try {
 			exec(cmd, {maxBuffer: 1024 * 10000}, (err, stdout, straceOutput) => {
 				parseOutput(straceOutput, listeners);
-				console.log('stdout');
-				console.log(stdout);
-				console.log('error');
-				console.log(err);
 
+				console.log(stdout);
 				if (failed || err) {
-					reject();
+					console.error('failed');
+					console.error(err);
+					reject('Runtime error');
 				} else {
 					resolve();
 				}
@@ -462,27 +471,28 @@ const handlePublishEvent = (publishEvent) => new Promise((resolve, reject) => {
 
 	updatePublishRequestState(gameId, sourceInfoHash, REQUEST_STATUS.PROCESSING).then(() => {
 		getPublishRequestRecord(gameId, sourceInfoHash).then((requestRecord) => {
-			console.log('request record');
-			console.log(requestRecord);
 			downloadCode(requestRecord).then(pathInfo => {
 				pokeCode(requestRecord, pathInfo, gameId, sourceInfoHash).then(() => {
 					homegameCheck().then(() => {
 						sendVerifyRequest(requestRecord).then(() => {
-							updatePublishRequestState(gameId, sourceInfoHash, REQUEST_STATUS.PENDING_APPROVAL);
+							updatePublishRequestState(gameId, sourceInfoHash, REQUEST_STATUS.PENDING_CONFIRMATION);
 						});
 					}).catch(err => {
 						console.error('failed homegames check');
 						console.log(err);
+						emitEvent(requestRecord.requestId, EVENT_TYPE.FAILURE, `Encountered error: ${err}`);
 						updatePublishRequestState(gameId, sourceInfoHash, REQUEST_STATUS.FAILED);
 					});
 				}).catch(err => {
 					console.error('Failed poke code step');
 					console.error(err);
+					emitEvent(requestRecord.requestId, EVENT_TYPE.FAILURE, `Encountered error: ${err}`);
 					updatePublishRequestState(gameId, sourceInfoHash, REQUEST_STATUS.FAILED);
 				});
 			}).catch(err => {
 				console.error('Failed download step');
 				console.error(err);
+				emitEvent(requestRecord.requestId, EVENT_TYPE.FAILURE, `Encountered error: ${err}`);
 				updatePublishRequestState(gameId, sourceInfoHash, REQUEST_STATUS.FAILED);
 			});
 		});
@@ -492,20 +502,24 @@ const handlePublishEvent = (publishEvent) => new Promise((resolve, reject) => {
 setInterval(() => {
 	const sqs = new aws.SQS({region: 'us-west-2'});
 	sqs.receiveMessage(params, (err, data) => {
-		console.log(err);
-		console.log(data);
-		if (data && data.Messages) {
-			const request = JSON.parse(data.Messages[0].Body);
-			handlePublishEvent(request);
-			const deleteParams = {
-			      QueueUrl: params.QueueUrl,
-			      ReceiptHandle: data.Messages[0].ReceiptHandle
-		        };
-		        sqs.deleteMessage(deleteParams, (err, data) => {
-				console.log(err);
-				console.log(data);
-				console.log('deleted');
-	    		});
+		try {
+			if (data && data.Messages) {
+				const request = JSON.parse(data.Messages[0].Body);
+				handlePublishEvent(request);
+				const deleteParams = {
+				      QueueUrl: params.QueueUrl,
+				      ReceiptHandle: data.Messages[0].ReceiptHandle
+			        };
+			        sqs.deleteMessage(deleteParams, (err, data) => {
+					console.log(err);
+					console.log(data);
+					console.log('deleted');
+	    			});
+			}
+
+		} catch (e) {
+			console.log('error processing message');
+			console.log(e);
 		}
 	});
 }, 60 * 1000);
