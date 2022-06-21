@@ -8,6 +8,10 @@ const archiver = require('archiver');
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 
+const GITHUB_USER = '';
+const GITHUB_KEY = '';
+const REQUEST_QUEUE_URL = '';
+
 const params = {
 	QueueUrl: REQUEST_QUEUE_URL,
 	MaxNumberOfMessages: 1,
@@ -210,6 +214,8 @@ const getBuild = (owner, repo, commit = undefined) => new Promise((resolve, reje
     https.get(thing, (_response) => {
         output.on('close', () => {
             fs.readdir(dir, (err, files) => {
+		console.log("WHEN I READ FILES I GETG");
+		console.log(files)
                 resolve({
                     path: dir + '/' + files[0],
                     zipPath: dir + 'out.zip'
@@ -221,11 +227,14 @@ const getBuild = (owner, repo, commit = undefined) => new Promise((resolve, reje
             path: dir
         }));
 
-	stream.on('end', () => {console.log('uhh end?')})
+	stream.on('end', () => {console.log('wtffffe end?')})
 	stream.on('close', () => {
                 fs.readdir(dir, (err, files) => {
+//			setTimeout(() => {
 		const projectRoot = `${dir}/${files[0]}`;
-            archive.file(projectRoot + '/index.js', { name: 'index.js' } );
+console.log(projectRoot);
+            archive.file(projectRoot + '/index.js', { name: 'index.js' } );//, false);
+//            archive.file(projectRoot + '/src/layer-base.js');//, false);
             archive.directory(projectRoot + '/src', 'src');
             archive.finalize();
 	})
@@ -233,6 +242,16 @@ const getBuild = (owner, repo, commit = undefined) => new Promise((resolve, reje
 
         stream.on('finish', () => {
 		console.log('finishedddd');
+                fs.readdir(dir, (err, files) => {
+//			setTimeout(() => {
+//		const projectRoot = `${dir}/${files[0]}`;
+//console.log(projectRoot);
+//            archive.file(projectRoot + '/index.js');//, false);
+//            archive.file(projectRoot + '/src/layer-base.js');//, false);
+////            archive.directory(projectRoot + '/src', false);
+//            archive.finalize();
+//}, 5000);
+});
         });
 
         archive.pipe(output);
@@ -269,6 +288,8 @@ const getS3Url = (gameId, requestId) => {
 
 const uploadZip = (zipPath, gameId, requestId) => new Promise((resolve, reject) => {
 	const s3 = new aws.S3({region: 'us-west-2'});
+	console.log("READING FILE FROMT HIS");
+	console.log(zipPath);
 	fs.readFile(zipPath, (err, buf) => {
 		if (err) {
 			console.log(`read file error ${err}`);
@@ -326,8 +347,8 @@ const checkIndex = (directory) => new Promise((resolve, reject) => {
 	});
 });
 
-const homegamesPoke = (publishRequest, entryPoint, gameId, sourceInfoHash) => new Promise((resolve, reject) => {
-	const cmd = 'strace node tester ' + entryPoint;
+const homegamesPoke = (publishRequest, entryPoint, gameId, sourceInfoHash, squishVersion) => new Promise((resolve, reject) => {
+	const cmd = 'strace node tester ' + entryPoint + ' ' + squishVersion;
 
 	console.log('running command');
 	console.log(cmd);
@@ -378,11 +399,11 @@ const homegamesPoke = (publishRequest, entryPoint, gameId, sourceInfoHash) => ne
 	});
 });
 
-const pokeCode = (publishRequest, codePath, gameId, sourceInfoHash) => new Promise((resolve, reject) => {
+const pokeCode = (publishRequest, codePath, gameId, sourceInfoHash, squishVersion) => new Promise((resolve, reject) => {
 	console.log('i am poking code');
 	emitEvent(publishRequest.requestId, EVENT_TYPE.POKE);
 	checkIndex(codePath.path).then(entryPoint => {
-		homegamesPoke(publishRequest, entryPoint, gameId, sourceInfoHash).then(() => {
+		homegamesPoke(publishRequest, entryPoint, gameId, sourceInfoHash, squishVersion).then(() => {
 			resolve();
 		}).catch(err => {
 			console.log("Failed homegames poke");
@@ -465,14 +486,59 @@ const getOwnerEmail = (owner) => new Promise((resolve, reject) => {
     });
 });
 
+const verifyGithubInfo = (requestRecord) => new Promise((resolve, reject) => {
+	console.log('need to verify info from here for api');
+	console.log(requestRecord);
+    const _headers = {
+        'User-Agent': 'HomegamesLandlord/0.1.0'
+    };
+
+    const req = https.request({
+        hostname: 'api.github.com',
+        path: `/repos/${requestRecord.repoOwner}/${requestRecord.repoName}`,//${requestRecord.commitHash ? '/' + requestRecord.commitHash : ''}`,
+        headers: _headers,
+	method: 'GET'
+    }, res => {
+
+        let _buf = '';
+
+        res.on('end', () => {
+		console.log("got buf");
+		console.log(_buf);
+		const jsonRes = JSON.parse(_buf);
+		const licenseKey = jsonRes.license && jsonRes.license.key;
+		if (!licenseKey || licenseKey !== 'gpl-3.0') {
+			console.log('bad license' + licenseKey);
+			reject('Bad license ' + licenseKey);
+		} else {
+	            resolve(_buf);
+		}
+        });
+
+        res.on('data', (_data) => {
+            _buf += _data;
+        });
+
+    });
+
+req.on('error', (e) => {
+	console.log(e);
+});
+
+console.log('ehre ifsdf ' + req.path);
+
+req.end();
+});
+
 const handlePublishEvent = (publishEvent) => new Promise((resolve, reject) => {
   
-	const { gameId, sourceInfoHash } = publishEvent;
+	const { gameId, sourceInfoHash, squishVersion } = publishEvent;
 
 	updatePublishRequestState(gameId, sourceInfoHash, REQUEST_STATUS.PROCESSING).then(() => {
 		getPublishRequestRecord(gameId, sourceInfoHash).then((requestRecord) => {
+	            verifyGithubInfo(requestRecord).then(pathInfo => {
 			downloadCode(requestRecord).then(pathInfo => {
-				pokeCode(requestRecord, pathInfo, gameId, sourceInfoHash).then(() => {
+				pokeCode(requestRecord, pathInfo, gameId, sourceInfoHash, squishVersion).then(() => {
 					homegameCheck().then(() => {
 						sendVerifyRequest(requestRecord).then(() => {
 							updatePublishRequestState(gameId, sourceInfoHash, REQUEST_STATUS.PENDING_CONFIRMATION);
@@ -495,6 +561,12 @@ const handlePublishEvent = (publishEvent) => new Promise((resolve, reject) => {
 				emitEvent(requestRecord.requestId, EVENT_TYPE.FAILURE, `Encountered error: ${err}`);
 				updatePublishRequestState(gameId, sourceInfoHash, REQUEST_STATUS.FAILED);
 			});
+		    }).catch(err => {
+			console.error('Failed verifying github info');
+			console.error(err);
+			emitEvent(requestRecord.requestId, EVENT_TYPE.FAILURE, `Encountered error: ${err}`);
+			updatePublishRequestState(gameId, sourceInfoHash, REQUEST_STATUS.FAILED);
+		    });
 		});
 	});
 });
@@ -505,6 +577,7 @@ setInterval(() => {
 		try {
 			if (data && data.Messages) {
 				const request = JSON.parse(data.Messages[0].Body);
+				console.log(request);
 				handlePublishEvent(request);
 				const deleteParams = {
 				      QueueUrl: params.QueueUrl,
