@@ -163,7 +163,7 @@ downloadZip(process.argv[2]).then((codePath) => {
 	const { gameId, sourceInfoHash, squishVersion } = publishEvent;
 	pokeCode(publishEvent, codePath, gameId, sourceInfoHash, squishVersion).then(() => {
 		console.log('just poked!!!');
-		writeExitMessage('ayylmao123');
+		writeExitMessage('success');
 	}).catch(err => {
 		console.log('errororor');
 		console.log(err);
@@ -174,6 +174,3 @@ downloadZip(process.argv[2]).then((codePath) => {
 	console.log(err);
 });
 
-//while (true) {
-
-//}
