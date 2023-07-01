@@ -7,6 +7,7 @@ const unzipper = require('unzipper');
 const archiver = require('archiver');
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
+const zlib = require('zlib');
 
 const GITHUB_USER = '';
 const GITHUB_KEY = '';
@@ -23,22 +24,22 @@ const sendVerificationEmail = (emailAddress, code, requestId, requester, repoNam
         const params = {
             Destination: {
                 ToAddresses: [
-                	emailAddress
+                	emailAddress 
                 ]
             },
             Message: {
                 Body: {
                     Html: {
                         Charset: 'UTF-8',
-                        Data: `<html><body>Homegames user ${requester} has submitted a game publishing request based on commit ${commitHash} of your GitHub repository ${repoName}.<br /><br />To approve this request, please click <a href="https://landlord.homegames.io/verify_publish_request?code=${code}&requestId=${requestId}">here</a>.<br /><br />Send an email to support@homegames.io if you need any assistance.</body></html>`
-                    }
+                        Data: `<html><body>Homegames user ${requester} has submitted a game publishing request based on commit ${commitHash} of your GitHub repository ${repoName}.<br /><br />To approve this request, please click <a href="https://api.homegames.io/verify_publish_request?code=${code}&requestId=${requestId}">here</a>.<br /><br />Send an email to support@homegames.io if you need any assistance.</body></html>`
+                    }   
                 },
                 Subject: {
                     Charset: 'UTF-8',
                     Data: 'Homegames Publishing Request'
                 }
             },
-            Source: 'landlord@homegames.io'
+            Source: 'support@homegames.io'
         };
         ses.sendEmail(params, (err, data) => {
             err ? reject(err) : resolve(data);
@@ -374,7 +375,7 @@ const homegamesPoke = (publishRequest, entryPoint, gameId, sourceInfoHash, squis
 	console.log('running command');
 	console.log(cmd);
 
-	dns.resolve('landlord.homegames.io', 'A', (err, hosts) => {
+	dns.resolve('api.homegames.io', 'A', (err, hosts) => {
 		const whitelistedIps = hosts;
 		let failed = false;
 		const listeners = {
@@ -390,8 +391,8 @@ const homegamesPoke = (publishRequest, entryPoint, gameId, sourceInfoHash, squis
 						emitEvent(publishRequest.requestId, EVENT_TYPE.FAILURE, `Made network request to unknown IP: ${requestedIp}`);
 						failed = true;
 					}
-
-				}
+					
+				}	
 			},
 			'open': (line) => {
 //				console.log('not sure what to do here yet: ' + line);
@@ -412,7 +413,7 @@ const homegamesPoke = (publishRequest, entryPoint, gameId, sourceInfoHash, squis
 				} else {
 					resolve();
 				}
-			});
+			});	
 		} catch (err) {
 			console.log('is this where it fails');
 			console.log(err);
@@ -463,7 +464,7 @@ const createCode = (publishRequestId) => new Promise((resolve, reject) => {
             resolve(code);
         }
     });
-
+ 
 });
 
 const getHash = (input) => {
@@ -492,7 +493,7 @@ const getOwnerEmail = (owner) => new Promise((resolve, reject) => {
         path: `/users/${owner}`,
         headers: _headers
     }, res => {
-
+        
         let _buf = '';
 
         res.on('end', () => {
@@ -502,7 +503,7 @@ const getOwnerEmail = (owner) => new Promise((resolve, reject) => {
 
         res.on('data', (_data) => {
             _buf += _data;
-        });
+        }); 
 
     });
 });
@@ -551,7 +552,7 @@ console.log('ehre ifsdf ' + req.path);
 req.end();
 });
 
-const dockerPoke = (gamePath, publishEvent, requestRecord) => {
+const dockerPoke = (gamePath, publishEvent, requestRecord) => new Promise((resolve, reject) => {
 	console.log('game is at ');
 	console.log(gamePath);
 
@@ -584,6 +585,11 @@ const dockerPoke = (gamePath, publishEvent, requestRecord) => {
 							throw new Error('nope nope nope multiple exit messages');
 						}
 						exitMessage = ting[1];
+						if (exitMessage === 'success') {
+							resolve();
+						} else {
+							reject('Failed: ' + exitMessage);
+						}
 					}
 					//exitMessage =
 				}
@@ -592,33 +598,45 @@ const dockerPoke = (gamePath, publishEvent, requestRecord) => {
 		console.log("EXIST MESAGE");
 		console.log(exitMessage);
         });
-};
+});
 
 const handlePublishEvent = (publishEvent) => new Promise((resolve, reject) => {
-
+  
 	const { gameId, sourceInfoHash, squishVersion } = publishEvent;
 
 	updatePublishRequestState(gameId, sourceInfoHash, REQUEST_STATUS.PROCESSING).then(() => {
 		getPublishRequestRecord(gameId, sourceInfoHash).then((requestRecord) => {
-	            verifyGithubInfo(requestRecord).then(pathInfo => {
+	            verifyGithubInfo(requestRecord).then(blahGarbage => {
 			const { repoOwner: owner, repoName: repo, commitHash: commit } =  requestRecord;//.repoOwner, publishRequest.repoName, publishRequest.commitHash).then(resolve);
 		    	const commitString = commit ? '/' + commit : '';
     			const thing = `https://codeload.github.com/${owner}/${repo}/zip${commitString}`;
 			console.log('what is thing! ' + thing);
+			    console.log("PATH INFO");
+ 
+				dockerPoke(thing, publishEvent, requestRecord).then(() => {
+					homegameCheck().then(() => {
+	getBuild(owner, repo, commit).then((pathInfo) => {
+					emitEvent(requestRecord.requestId, 'UPLOAD_ZIP');
 
-//			downloadCode(requestRecord).then(pathInfo => {
-				dockerPoke(thing, publishEvent, requestRecord);
-//				pokeCode(requestRecord, pathInfo, gameId, sourceInfoHash, squishVersion).then(() => {
-//					homegameCheck().then(() => {
-//						sendVerifyRequest(requestRecord).then(() => {
-//							updatePublishRequestState(gameId, sourceInfoHash, REQUEST_STATUS.PENDING_CONFIRMATION);
-//						});
-//					}).catch(err => {
-//						console.error('failed homegames check');
-//						console.log(err);
-//						emitEvent(requestRecord.requestId, EVENT_TYPE.FAILURE, `Encountered error: ${err}`);
-//						updatePublishRequestState(gameId, sourceInfoHash, REQUEST_STATUS.FAILED);
-//					});
+					uploadZip(pathInfo.zipPath, gameId, requestRecord.requestId).then(() => {
+						console.log('uploaded zip for request ' + requestRecord.requestId);
+						sendVerifyRequest(requestRecord).then(() => {
+							updatePublishRequestState(gameId, sourceInfoHash, REQUEST_STATUS.PENDING_CONFIRMATION);
+						});
+	
+					}).catch(err => {
+						console.log('failed to upload zip');
+						console.log(err);
+						reject();
+					});
+	});
+				}).catch(err => {
+						console.error('failed homegames check');
+						console.log(err);
+						emitEvent(requestRecord.requestId, EVENT_TYPE.FAILURE, `Encountered error: ${err}`);
+						updatePublishRequestState(gameId, sourceInfoHash, REQUEST_STATUS.FAILED);
+					});
+				});
 //				}).catch(err => {
 //					console.error('Failed poke code step');
 //					console.error(err);
@@ -641,19 +659,25 @@ const handlePublishEvent = (publishEvent) => new Promise((resolve, reject) => {
 	});
 });
 
-const data = {
-	Messages: [
-{
-Body: '{"sourceInfoHash": "2f358206095176b94dad5bd624d3195c","gameId": "7c6187de4309faff638fc8ad082b1d5b"}'
-}
-	]
-}
+//const data = {
+//	Messages: [
+//{
+//Body: '{"sourceInfoHash": "2f358206095176b94dad5bd624d3195c","gameId": "7c6187de4309faff638fc8ad082b1d5b"}'
+//}
+//	]
+//}
+//
+//const ting = JSON.stringify(
+//{
+//  sourceInfoHash: '00a012f426e6ec99de6c54329e823a89',
+//  gameId: '7c6187de4309faff638fc8ad082b1d5b'
+//});
 
-console.log(data.Messages[0].Body);
+//console.log(data.Messages[0].Body);
 
-//setInterval(() => {
+setInterval(() => {
 	const sqs = new aws.SQS({region: 'us-west-2'});
-//	sqs.receiveMessage(params, (err, data) => {
+	sqs.receiveMessage(params, (err, data) => {
 		try {
 			if (data && data.Messages) {
 				const request = JSON.parse(data.Messages[0].Body);
@@ -674,6 +698,6 @@ console.log(data.Messages[0].Body);
 			console.log('error processing message');
 			console.log(e);
 		}
-	//});
-//}, 60 * 1000);
-
+	});
+}, 60 * 1000);
+	//
