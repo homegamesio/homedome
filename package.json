@@ -1,0 +1,38 @@
+{
+  "name": "homedome",
+  "version": "0.1.0",
+  "description": "2319",
+  "main": "index.js",
+  "dependencies": {
+    "archiver": "^5.3.0",
+    "aws-sdk": "^2.939.0",
+    "squish-061": "npm:squishjs@0.6.1",
+    "squish-063": "npm:squishjs@0.6.3",
+    "squish-0631": "npm:squishjs@0.6.31",
+    "squish-0632": "npm:squishjs@0.6.32",
+    "squish-0633": "npm:squishjs@0.6.33",
+    "squish-0756": "npm:squishjs@0.7.56",
+    "squish-0762": "npm:squishjs@0.7.62",
+    "squish-0765": "npm:squishjs@0.7.65",
+    "squish-0766": "npm:squishjs@0.7.66",
+    "squish-0767": "npm:squishjs@0.7.67",
+    "squish-1000": "npm:squishjs@1.0.0",
+    "squish-1004": "npm:squishjs@1.0.4",
+    "squish-1005": "npm:squishjs@1.0.5",
+    "unzipper": "^0.10.11"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/homegamesio/homedome.git"
+  },
+  "author": "Joseph Garcia",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/homegamesio/homedome/issues"
+  },
+  "homepage": "https://github.com/homegamesio/homedome#readme"
+}

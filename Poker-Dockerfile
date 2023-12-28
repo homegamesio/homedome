@@ -1,0 +1,17 @@
+FROM node:18
+
+WORKDIR /usr/src/app
+
+COPY package*.json ./
+
+COPY *.sh /usr/src/app
+
+RUN apt-get update
+
+RUN apt-get -y install strace
+
+RUN npm install
+
+COPY . .
+
+ENTRYPOINT ["/usr/src/app/docker-main.sh"]
