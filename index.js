@@ -248,9 +248,7 @@ const getBuild = (owner, repo, commit = undefined) =>
       stream.on("close", () => {
         fs.readdir(dir, (err, files) => {
           const projectRoot = `${dir}/${files[0]}`;
-          console.log(projectRoot);
-          archive.file(projectRoot + "/index.js", { name: "index.js" }); //, false);
-          //            archive.file(projectRoot + '/src/layer-base.js');//, false);
+          archive.file(projectRoot + "/index.js", { name: "index.js" });
           archive.directory(projectRoot + "/src", "src");
           archive.finalize();
         });
@@ -258,16 +256,6 @@ const getBuild = (owner, repo, commit = undefined) =>
 
       stream.on("finish", () => {
         console.log("finishedddd");
-        fs.readdir(dir, (err, files) => {
-          //			setTimeout(() => {
-          //		const projectRoot = `${dir}/${files[0]}`;
-          //console.log(projectRoot);
-          //            archive.file(projectRoot + '/index.js');//, false);
-          //            archive.file(projectRoot + '/src/layer-base.js');//, false);
-          ////            archive.directory(projectRoot + '/src', false);
-          //            archive.finalize();
-          //}, 5000);
-        });
       });
 
       archive.pipe(output);
@@ -307,8 +295,6 @@ const getS3Url = (gameId, requestId) => {
 const uploadZip = (zipPath, gameId, requestId) =>
   new Promise((resolve, reject) => {
     const s3 = new aws.S3({ region: "us-west-2" });
-    console.log("READING FILE FROMT HIS");
-    console.log(zipPath);
     fs.readFile(zipPath, (err, buf) => {
       if (err) {
         console.log(`read file error ${err}`);
@@ -345,21 +331,6 @@ const downloadCode = (publishRequest) =>
       publishRequest.repoName,
       publishRequest.commitHash,
     ).then(resolve);
-    //emitEvent(publishRequest.requestId, EVENT_TYPE.DOWNLOAD);
-    //getBuild(publishRequest.repoOwner, publishRequest.repoName, publishRequest.commitHash).then((pathInfo) => {
-    //	emitEvent(publishRequest.requestId, 'UPLOAD_ZIP');
-    //	uploadZip(pathInfo.zipPath, publishRequest.gameId, publishRequest.requestId).then(() => {
-    //		console.log('uploaded zip for request ' + publishRequest.requestId);
-    //		resolve(pathInfo);
-    //	}).catch(err => {
-    //		console.log('failed to upload zip');
-    //		console.log(err);
-    //		reject();
-    //	});
-    //}).catch(err => {
-    //	console.log('get build error ' + err);
-    //	reject();
-    //});;
   });
 
 const checkIndex = (directory) =>
@@ -600,18 +571,11 @@ const verifyGithubInfo = (requestRecord) =>
       console.log(e);
     });
 
-    console.log("ehre ifsdf " + req.path);
-
     req.end();
   });
 
 const dockerPoke = (gamePath, publishEvent, requestRecord) =>
   new Promise((resolve, reject) => {
-    console.log("game is at ");
-    console.log(gamePath);
-
-    //	console.log("AYYYYYYYYYLMAOTHISISTHEEXITMESSAGE:" + msg);
-    //	console.log("AYYYYYYYYYLMAOTHISISTHEEXITMESSAGE:" + msg + "::andthatwastheendofthemessage");
     let exitMessage = "";
     const { exec } = require("child_process");
     console.log(
@@ -630,13 +594,6 @@ const dockerPoke = (gamePath, publishEvent, requestRecord) =>
         " " +
         Buffer.from(JSON.stringify(requestRecord)).toString("base64"),
       (err, stderr, stdout) => {
-        //npm --prefix ' + dir.path + ' install', (err, stdout, stderr) => {
-        console.log("DID THAT?");
-        console.log(!!err);
-        console.log(!!stdout);
-        console.log(!!stderr);
-        console.log(stdout);
-
         const lines = stderr && stderr.split("\\n");
         let exitMessage = null;
         if (lines) {
@@ -659,11 +616,10 @@ const dockerPoke = (gamePath, publishEvent, requestRecord) =>
                   reject("Failed: " + exitMessage);
                 }
               }
-              //exitMessage =
             }
           }
         }
-        console.log("EXIST MESAGE");
+        console.log("EXIT MESAGE");
         console.log(exitMessage);
       },
     );
