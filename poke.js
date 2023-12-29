@@ -11,49 +11,37 @@ const zlib = require('zlib');
 const { parseOutput } = require('./strace-parser');
 
 const downloadZip = (url) => new Promise((resolve, reject) => {
-    console.log('the fuckeroo');
     const dir = `/tmp/${Date.now()}`;
 
     const file = fs.createWriteStream(dir + '.zip');
     const archive = archiver('zip');
     const output = fs.createWriteStream(dir + 'out.zip');
-    console.log('the fuckero2');
-	console.log(url);
 
     https.get(url, (_response) => {
-	console.log("GOT RESPONSE!");
         output.on('close', () => {
-		console.log("CLOSED");
-            fs.readdir(dir, (err, files) => {
-		console.log("WHEN I READ FILES I GETG");
-		console.log(files)
-                resolve({
-                    path: dir + '/' + files[0],
-                    zipPath: dir + 'out.zip'
-                });
-            });
+		console.log('closed outtput');
+            //fs.readdir(dir, (err, files) => {
+            //    resolve({
+            //        path: dir + '/' + files[0],
+            //        zipPath: dir + 'out.zip'
+            //    });
+            //});
         });
 
         const stream = _response.pipe(unzipper.Extract({
             path: dir
         }));
 
-		console.log("CLOSED dsfdsfds");
 	stream.on('end', () => {console.log('wtffffe end?')})
+	    stream.on('finish', () => {console.log('the fuck man')});
 	stream.on('close', () => {
 		console.log("CLOSED stream");
                 fs.readdir(dir, (err, files) => {
-//			setTimeout(() => {
 		const projectRoot = `${dir}/${files[0]}`;
-console.log(projectRoot);
             archive.file(projectRoot + '/index.js', { name: 'index.js' } );//, false);
-//            archive.file(projectRoot + '/src/layer-base.js');//, false);
             archive.directory(projectRoot + '/src', 'src');
             archive.finalize().then(() => {
-			console.log('finalized plesase');
       fs.readdir(dir, (err, files) => {
-		console.log("WHEN I READ FILES I GETG");
-		console.log(files)
                 resolve({
                     path: dir + '/' + files[0],
                     zipPath: dir + 'out.zip'
@@ -77,7 +65,7 @@ const checkIndex = (directory) => new Promise((resolve, reject) => {
 });
 
 const homegamesPoke = (publishRequest, entryPoint, gameId, sourceInfoHash, squishVersion) => new Promise((resolve, reject) => {
-	const cmd = 'strace node tester ' + entryPoint + ' ' + squishVersion;
+	const cmd = 'strace node tester ' + entryPoint + ' ' + require.resolve('squish-' + squishVersion);
 
 	console.log('running command');
 	console.log(cmd);
@@ -159,8 +147,12 @@ downloadZip(process.argv[2]).then((codePath) => {
 
 	const publishEvent = JSON.parse(Buffer.from(publishEventBase64, "base64"));
 	const requestRecord = JSON.parse(Buffer.from(requestRecordBase64, "base64"));
+
+	console.log("REQUIRED RECORD");
+	console.log(requestRecord);
 	
-	const { gameId, sourceInfoHash, squishVersion } = publishEvent;
+	const { gameId, sourceInfoHash } = publishEvent;
+	const { squishVersion } = requestRecord;
 	pokeCode(publishEvent, codePath, gameId, sourceInfoHash, squishVersion).then(() => {
 		console.log('just poked!!!');
 		writeExitMessage('success');
@@ -173,4 +165,3 @@ downloadZip(process.argv[2]).then((codePath) => {
 	console.log('eroeroerer');
 	console.log(err);
 });
-

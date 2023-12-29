@@ -1,6 +1,11 @@
 const gameModulePath = process.argv[2];
+const squishPath = process.argv[3];
+
 const path = require('path');
 const fs = require('fs');
+
+process.env.SQUISH_PATH = squishPath;
+
 
 const runTest = (game) => {
 	const gameRoot = game.getRoot && game.getRoot();
