@@ -2,6 +2,7 @@ const aws = require("aws-sdk");
 const { exec } = require("child_process");
 const dns = require("dns");
 const fs = require("fs");
+const path = require('path');
 const https = require("https");
 const unzipper = require("unzipper");
 const archiver = require("archiver");
@@ -10,44 +11,77 @@ const { v4: uuidv4 } = require("uuid");
 const zlib = require("zlib");
 const { parseOutput } = require("./strace-parser");
 
+const { Parser } = require('acorn');
+
+const parseSquishVersion = (codePath) => {
+    const parsed = Parser.parse(fs.readFileSync(codePath));
+    
+    const foundGameClasses = parsed.body.filter(n => n.type === 'ClassDeclaration' && n.superClass?.name === 'Game');
+    
+    if (foundGameClasses.length !== 1) {
+        throw new Error('Top-level file should have one defined game class');
+    }
+    
+    const foundGame = foundGameClasses[0];
+    
+    const foundConstructors = foundGame.body.body.filter(n => n.key?.name === 'metadata' && n.kind === 'method');
+    
+    if (foundConstructors.length !== 1) {
+        throw new Error('Game needs one constructor');
+    }
+    
+    const foundConstructor = foundConstructors[0];
+    
+    let foundSquishVersion;
+    
+    foundConstructor.value.body.body.forEach(n => {
+        const squishVersionNodes = n.argument.properties.filter(n => n.key?.name === 'squishVersion');
+        if (squishVersionNodes.length > 1 || (foundSquishVersion && squishVersionNodes.length == 1)) {
+            throw new Error('Multiple squish versions found');
+        } 
+    
+        if (squishVersionNodes.length === 1) {
+            foundSquishVersion = squishVersionNodes[0].value.value;
+        }
+    });
+    
+    if (!foundSquishVersion) {
+        throw new Error('No squish version found');
+    }
+    
+    return foundSquishVersion;
+};
+
 const downloadZip = (url) =>
   new Promise((resolve, reject) => {
-    const dir = `/tmp/${Date.now()}`;
+    const outDir = `/tmp/${Date.now()}`;
+    fs.mkdirSync(outDir);
+    const zipPath = `${outDir}/data.zip`;
+    const dirPath = `${outDir}/data`;
 
-    const file = fs.createWriteStream(dir + ".zip");
-    const archive = archiver("zip");
-    const output = fs.createWriteStream(dir + "out.zip");
+    const zipWriteStream = fs.createWriteStream(zipPath);
 
-    https.get(url, (_response) => {
-      output.on("close", () => {
-        console.log("closed outtput");
-      });
-
-      const stream = _response.pipe(
-        unzipper.Extract({
-          path: dir,
-        }),
-      );
-
-      stream.on("end", () => {
-      });
-      stream.on("finish", () => {
-      });
-      stream.on("close", () => {
-        fs.readdir(dir, (err, files) => {
-          const projectRoot = `${dir}/${files[0]}`;
-          archive.file(projectRoot + "/index.js", { name: "index.js" });
-          archive.directory(projectRoot + "/src", "src");
-          archive.finalize().then(() => {
-            fs.readdir(dir, (err, files) => {
-              resolve({
-                path: dir + "/" + files[0],
-                zipPath: dir + "out.zip",
-              });
+    zipWriteStream.on('close', () => {
+        fs.createReadStream(zipPath).pipe(unzipper.Extract({ path: dirPath }).on('close', () => {
+            const stuff = fs.readdirSync(dirPath);
+            resolve({
+                path: path.join(dirPath, stuff[0]),
+                zipPath: zipPath
             });
-          });
+        }));
+    });
+
+    https.get(url, (res) => {
+        res.on('data', (chunk) => {
+            zipWriteStream.write(chunk);
         });
-      });
+
+        res.on('end', () => {
+            zipWriteStream.end();
+        });
+    }).on('error', (err) => {
+        console.error(err);
+        reject(err);
     });
   });
 
@@ -173,9 +207,6 @@ const writeExitMessage = (msg) => {
 
 downloadZip(process.argv[2])
   .then((codePath) => {
-    console.log("downloaded holy shit");
-    console.log("CODE PATH");
-    console.log(codePath);
     const publishEventBase64 = process.argv[3];
     const requestRecordBase64 = process.argv[4];
 
@@ -184,11 +215,9 @@ downloadZip(process.argv[2])
       Buffer.from(requestRecordBase64, "base64"),
     );
 
-    console.log("REQUIRED RECORD");
-    console.log(requestRecord);
-
     const { gameId, sourceInfoHash } = publishEvent;
-    const { squishVersion } = requestRecord;
+    const squishVersion = parseSquishVersion(codePath.path + '/index.js');;
+
     pokeCode(publishEvent, codePath, gameId, sourceInfoHash, squishVersion)
       .then(() => {
         console.log("just poked!!!");
