@@ -52,8 +52,6 @@ const sendVerificationEmail = (
     });
   });
 
-const { parseOutput } = require("./strace-parser");
-
 const updatePublishRequestState = (gameId, sourceInfoHash, newStatus) =>
   new Promise((resolve, reject) => {
     const ddb = new aws.DynamoDB({
@@ -124,8 +122,7 @@ const getPublishRequestRecord = (gameId, sourceInfoHash) =>
             requester: _item.requester.S,
             status: _item.status.S,
             gameId: _item.game_id.S,
-            commitHash: _item.commit_hash.S,
-            squishVersion: _item.squishVersion.S,
+            commitHash: _item.commit_hash.S
           });
         } else {
           reject("No results");
@@ -322,17 +319,6 @@ const uploadZip = (zipPath, gameId, requestId) =>
     });
   });
 
-const downloadCode = (publishRequest) =>
-  new Promise((resolve, reject) => {
-    console.log("i am downloading code");
-    console.log(publishRequest);
-    getBuildBase64(
-      publishRequest.repoOwner,
-      publishRequest.repoName,
-      publishRequest.commitHash,
-    ).then(resolve);
-  });
-
 const checkIndex = (directory) =>
   new Promise((resolve, reject) => {
     fs.access(`${directory}/index.js`, fs.F_OK, (err) => {
@@ -342,106 +328,6 @@ const checkIndex = (directory) =>
         resolve(`${directory}/index.js`);
       }
     });
-  });
-
-const homegamesPoke = (
-  publishRequest,
-  entryPoint,
-  gameId,
-  sourceInfoHash,
-  squishVersion,
-) =>
-  new Promise((resolve, reject) => {
-    const cmd = "strace node tester " + entryPoint + " " + squishVersion;
-
-    console.log("running command");
-    console.log(cmd);
-
-    dns.resolve("api.homegames.io", "A", (err, hosts) => {
-      const whitelistedIps = hosts;
-      let failed = false;
-      const listeners = {
-        socket: (line) => {
-          console.log("doing something with a socket at: " + line);
-        },
-        connect: (line) => {
-          const ipRegex = new RegExp('inet_addr\\("(\\S*)"', "g");
-          const _match = ipRegex.exec(line);
-          if (_match) {
-            const requestedIp = _match[1];
-            if (whitelistedIps.indexOf(requestedIp) < 0) {
-              emitEvent(
-                publishRequest.requestId,
-                EVENT_TYPE.FAILURE,
-                `Made network request to unknown IP: ${requestedIp}`,
-              );
-              failed = true;
-            }
-          }
-        },
-        open: (line) => {
-          //				console.log('not sure what to do here yet: ' + line);
-        },
-        read: (line) => {
-          //				console.log('not sure what to do here yet: ' + line);
-        },
-      };
-      try {
-        exec(cmd, { maxBuffer: 1024 * 10000 }, (err, stdout, straceOutput) => {
-          parseOutput(straceOutput, listeners);
-
-          console.log(stdout);
-          if (failed || err) {
-            console.error("failed");
-            console.error(err);
-            reject("Runtime error");
-          } else {
-            resolve();
-          }
-        });
-      } catch (err) {
-        console.log("is this where it fails");
-        console.log(err);
-      }
-    });
-  });
-
-const pokeCode = (
-  publishRequest,
-  codePath,
-  gameId,
-  sourceInfoHash,
-  squishVersion,
-) =>
-  new Promise((resolve, reject) => {
-    console.log("i am poking code");
-    emitEvent(publishRequest.requestId, EVENT_TYPE.POKE);
-    checkIndex(codePath.path)
-      .then((entryPoint) => {
-        homegamesPoke(
-          publishRequest,
-          entryPoint,
-          gameId,
-          sourceInfoHash,
-          squishVersion,
-        )
-          .then(() => {
-            resolve();
-          })
-          .catch((err) => {
-            console.log("Failed homegames poke");
-            console.log(err);
-            reject();
-          });
-      })
-      .catch(() => {
-        emitEvent(
-          publishRequest.requestId,
-          EVENT_TYPE.FAILURE,
-          "No index.js found",
-        );
-        reject();
-      });
   });
 
 const homegameCheck = (entryPointPath) =>
@@ -627,8 +513,10 @@ const dockerPoke = (gamePath, publishEvent, requestRecord) =>
 
 const handlePublishEvent = (publishEvent) =>
   new Promise((resolve, reject) => {
-    const { gameId, sourceInfoHash, squishVersion } = publishEvent;
+    const { gameId, sourceInfoHash } = publishEvent;
 
+    console.log(gameId);
+    console.log(sourceInfoHash);
     updatePublishRequestState(
       gameId,
       sourceInfoHash,
@@ -641,11 +529,9 @@ const handlePublishEvent = (publishEvent) =>
               repoOwner: owner,
               repoName: repo,
               commitHash: commit,
-            } = requestRecord; //.repoOwner, publishRequest.repoName, publishRequest.commitHash).then(resolve);
+            } = requestRecord; 
             const commitString = commit ? "/" + commit : "";
             const thing = `https://codeload.github.com/${owner}/${repo}/zip${commitString}`;
-            console.log("what is thing! " + thing);
-            console.log("PATH INFO");
 
             dockerPoke(thing, publishEvent, requestRecord).then(() => {
               homegameCheck()
@@ -688,18 +574,6 @@ const handlePublishEvent = (publishEvent) =>
                   );
                 });
             });
-            //				}).catch(err => {
-            //					console.error('Failed poke code step');
-            //					console.error(err);
-            //					emitEvent(requestRecord.requestId, EVENT_TYPE.FAILURE, `Encountered error: ${err}`);
-            //					updatePublishRequestState(gameId, sourceInfoHash, REQUEST_STATUS.FAILED);
-            //				});
-            //			}).catch(err => {
-            //				console.error('Failed download step');
-            //				console.error(err);
-            //				emitEvent(requestRecord.requestId, EVENT_TYPE.FAILURE, `Encountered error: ${err}`);
-            //				updatePublishRequestState(gameId, sourceInfoHash, REQUEST_STATUS.FAILED);
-            //			});
           })
           .catch((err) => {
             console.error("Failed verifying github info");
@@ -722,6 +596,7 @@ const handlePublishEvent = (publishEvent) =>
 setInterval(() => {
   const sqs = new aws.SQS({ region: "us-west-2" });
   sqs.receiveMessage(params, (err, data) => {
+    console.log(data);
     try {
       if (data && data.Messages) {
         const request = JSON.parse(data.Messages[0].Body);
@@ -731,6 +606,7 @@ setInterval(() => {
           QueueUrl: params.QueueUrl,
           ReceiptHandle: data.Messages[0].ReceiptHandle,
         };
+
         sqs.deleteMessage(deleteParams, (err, data) => {
           console.log(err);
           console.log(data);
@@ -743,4 +619,4 @@ setInterval(() => {
     }
   });
 }, 60 * 1000);
-//
+
