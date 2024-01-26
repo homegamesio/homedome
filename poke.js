@@ -92,13 +92,13 @@ const downloadZip = (url) =>
     });
   });
 
-const checkIndex = (directory) =>
+const checkIndex = (path) =>
   new Promise((resolve, reject) => {
-    fs.access(`${directory}/index.js`, fs.F_OK, (err) => {
+    fs.access(`${path}`, fs.F_OK, (err) => {
       if (err) {
         reject();
       } else {
-        resolve(`${directory}/index.js`);
+        resolve(path);
       }
     });
   });
