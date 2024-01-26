@@ -596,6 +596,7 @@ const handlePublishEvent = (publishEvent) =>
 setInterval(() => {
   const sqs = new aws.SQS({ region: "us-west-2" });
   sqs.receiveMessage(params, (err, data) => {
+    console.log(new Date());
     console.log(data);
     try {
       if (data && data.Messages) {

@@ -4,7 +4,7 @@ const dns = require("dns");
 const fs = require("fs");
 const path = require('path');
 const https = require("https");
-const unzipper = require("unzipper");
+const decompress = require('decompress');
 const archiver = require("archiver");
 const crypto = require("crypto");
 const { v4: uuidv4 } = require("uuid");
@@ -62,23 +62,30 @@ const downloadZip = (url) =>
     const zipWriteStream = fs.createWriteStream(zipPath);
 
     zipWriteStream.on('close', () => {
-        fs.createReadStream(zipPath).pipe(unzipper.Extract({ path: dirPath }).on('close', () => {
-            const stuff = fs.readdirSync(dirPath);
-            resolve({
-                path: path.join(dirPath, stuff[0]),
-                zipPath: zipPath
-            });
-        }));
+	console.log('closed thing');
+	decompress(zipPath, dirPath).then((files) => {
+		console.log('dsfkjdsfjdhsf');
+		console.log(files);
+		const foundIndex = files.filter(f => f.type === 'file' && f.path.endsWith('index.js'))[0];
+		resolve({
+			path: path.join(dirPath, foundIndex.path),
+			zipPath
+		});
+	});
+//        fs.createReadStream(zipPath).pipe(unzipper.Extract({ path: dirPath }).on('close', () => {
+//            const stuff = fs.readdirSync(dirPath);
+//            resolve({
+//                path: path.join(dirPath, stuff[0]),
+//                zipPath: zipPath
+//            });
+//        }));
     });
 
     https.get(url, (res) => {
-        res.on('data', (chunk) => {
-            zipWriteStream.write(chunk);
-        });
-
-        res.on('end', () => {
-            zipWriteStream.end();
-        });
+	res.pipe(zipWriteStream);
+	zipWriteStream.on('finish', () => {
+		zipWriteStream.close();
+	});
     }).on('error', (err) => {
         console.error(err);
         reject(err);
@@ -216,7 +223,7 @@ downloadZip(process.argv[2])
     );
 
     const { gameId, sourceInfoHash } = publishEvent;
-    const squishVersion = parseSquishVersion(codePath.path + '/index.js');;
+    const squishVersion = parseSquishVersion(codePath.path);
 
     pokeCode(publishEvent, codePath, gameId, sourceInfoHash, squishVersion)
       .then(() => {
