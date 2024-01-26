@@ -72,13 +72,6 @@ const downloadZip = (url) =>
 			zipPath
 		});
 	});
-//        fs.createReadStream(zipPath).pipe(unzipper.Extract({ path: dirPath }).on('close', () => {
-//            const stuff = fs.readdirSync(dirPath);
-//            resolve({
-//                path: path.join(dirPath, stuff[0]),
-//                zipPath: zipPath
-//            });
-//        }));
     });
 
     https.get(url, (res) => {

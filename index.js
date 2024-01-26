@@ -3,7 +3,6 @@ const { exec } = require("child_process");
 const dns = require("dns");
 const fs = require("fs");
 const https = require("https");
-const unzipper = require("unzipper");
 const archiver = require("archiver");
 const crypto = require("crypto");
 const { v4: uuidv4 } = require("uuid");
@@ -215,48 +214,47 @@ const getBuildBase64 = (owner, repo, commit = undefined) =>
     });
   });
 
+// copied from poke
+const downloadZip = (url) =>
+  new Promise((resolve, reject) => {
+    const outDir = `/tmp/${Date.now()}`;
+    fs.mkdirSync(outDir);
+    const zipPath = `${outDir}/data.zip`;
+    const dirPath = `${outDir}/data`;
+
+    const zipWriteStream = fs.createWriteStream(zipPath);
+
+    zipWriteStream.on('close', () => {
+	console.log('closed thing');
+	decompress(zipPath, dirPath).then((files) => {
+		console.log('dsfkjdsfjdhsf');
+		console.log(files);
+		const foundIndex = files.filter(f => f.type === 'file' && f.path.endsWith('index.js'))[0];
+		resolve({
+			path: path.join(dirPath, foundIndex.path),
+			zipPath
+		});
+	});
+    });
+
+    https.get(url, (res) => {
+	res.pipe(zipWriteStream);
+	zipWriteStream.on('finish', () => {
+		zipWriteStream.close();
+	});
+    }).on('error', (err) => {
+        console.error(err);
+        reject(err);
+    });
+  });
+
+
+
 const getBuild = (owner, repo, commit = undefined) =>
   new Promise((resolve, reject) => {
-    // todo: uuid
-    const dir = `/tmp/${Date.now()}`;
-
     const commitString = commit ? "/" + commit : "";
-    const file = fs.createWriteStream(dir + ".zip");
     const thing = `https://codeload.github.com/${owner}/${repo}/zip${commitString}`;
-    const archive = archiver("zip");
-    const output = fs.createWriteStream(dir + "out.zip");
-
-    https.get(thing, (_response) => {
-      output.on("close", () => {
-        fs.readdir(dir, (err, files) => {
-          resolve({
-            path: dir + "/" + files[0],
-            zipPath: dir + "out.zip",
-          });
-        });
-      });
-
-      const stream = _response.pipe(
-        unzipper.Extract({
-          path: dir,
-        }),
-      );
-
-      stream.on("close", () => {
-        fs.readdir(dir, (err, files) => {
-          const projectRoot = `${dir}/${files[0]}`;
-          archive.file(projectRoot + "/index.js", { name: "index.js" });
-          archive.directory(projectRoot + "/src", "src");
-          archive.finalize();
-        });
-      });
-
-      stream.on("finish", () => {
-        console.log("finishedddd");
-      });
-
-      archive.pipe(output);
-    });
+    downloadZip(thing).then(resolve);
   });
 
 const getCommit = (owner, repo, commit = undefined) =>
@@ -292,29 +290,23 @@ const getS3Url = (gameId, requestId) => {
 const uploadZip = (zipPath, gameId, requestId) =>
   new Promise((resolve, reject) => {
     const s3 = new aws.S3({ region: "us-west-2" });
-    fs.readFile(zipPath, (err, buf) => {
-      if (err) {
-        console.log(`read file error ${err}`);
+    const zipData = fs.readFileSync(zipPath);
+    const params = {
+      Body: zipData,
+      ACL: "public-read",
+      Bucket: "hg-games",
+      Key: `${gameId}/${requestId}/code.zip`,
+    };
+
+    s3.putObject(params, (s3Err, s3Data) => {
+      console.log("put object result");
+      console.log(s3Err);
+      console.log(s3Data);
+      if (s3Err) {
+        console.log(`s3 error ${s3Err}`);
         reject();
       } else {
-        const params = {
-          Body: buf,
-          ACL: "public-read",
-          Bucket: "hg-games",
-          Key: `${gameId}/${requestId}/code.zip`,
-        };
-
-        s3.putObject(params, (s3Err, s3Data) => {
-          console.log("put object result");
-          console.log(s3Err);
-          console.log(s3Data);
-          if (s3Err) {
-            console.log(`s3 error ${s3Err}`);
-            reject();
-          } else {
-            resolve();
-          }
-        });
+        resolve();
       }
     });
   });
