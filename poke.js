@@ -52,39 +52,6 @@ const parseSquishVersion = (codePath) => {
     return foundSquishVersion;
 };
 
-const downloadZip = (url) =>
-  new Promise((resolve, reject) => {
-    const outDir = `/tmp/${Date.now()}`;
-    fs.mkdirSync(outDir);
-    const zipPath = `${outDir}/data.zip`;
-    const dirPath = `${outDir}/data`;
-
-    const zipWriteStream = fs.createWriteStream(zipPath);
-
-    zipWriteStream.on('close', () => {
-	console.log('closed thing');
-	decompress(zipPath, dirPath).then((files) => {
-		console.log('dsfkjdsfjdhsf');
-		console.log(files);
-		const foundIndex = files.filter(f => f.type === 'file' && f.path.endsWith('index.js'))[0];
-		resolve({
-			path: path.join(dirPath, foundIndex.path),
-			zipPath
-		});
-	});
-    });
-
-    https.get(url, (res) => {
-	res.pipe(zipWriteStream);
-	zipWriteStream.on('finish', () => {
-		zipWriteStream.close();
-	});
-    }).on('error', (err) => {
-        console.error(err);
-        reject(err);
-    });
-  });
-
 const checkIndex = (path) =>
   new Promise((resolve, reject) => {
     fs.access(`${path}`, fs.F_OK, (err) => {
@@ -97,10 +64,7 @@ const checkIndex = (path) =>
   });
 
 const homegamesPoke = (
-  publishRequest,
   entryPoint,
-  gameId,
-  sourceInfoHash,
   squishVersion,
 ) =>
   new Promise((resolve, reject) => {
@@ -113,7 +77,7 @@ const homegamesPoke = (
     console.log("running command");
     console.log(cmd);
 
-    dns.resolve("landlord.homegames.io", "A", (err, hosts) => {
+    dns.resolve("api.homegames.io", "A", (err, hosts) => {
       const whitelistedIps = hosts;
       let failed = false;
       const listeners = {
@@ -163,21 +127,19 @@ const homegamesPoke = (
   });
 
 const pokeCode = (
-  publishRequest,
-  codePath,
-  gameId,
-  sourceInfoHash,
+  indexPath,
+  codeDir,
   squishVersion,
 ) =>
   new Promise((resolve, reject) => {
     console.log("i am poking code");
-    checkIndex(codePath.path)
+    console.log(indexPath);
+    checkIndex('/thangs/test_unzipped/' + indexPath.path)
       .then((entryPoint) => {
+        console.log('entry point');
+        console.log(entryPoint);
         homegamesPoke(
-          publishRequest,
           entryPoint,
-          gameId,
-          sourceInfoHash,
           squishVersion,
         )
           .then(() => {
@@ -205,31 +167,26 @@ const writeExitMessage = (msg) => {
   );
 };
 
-downloadZip(process.argv[2])
-  .then((codePath) => {
-    const publishEventBase64 = process.argv[3];
-    const requestRecordBase64 = process.argv[4];
+console.log('want me to get thing');
+console.log(process.argv[2]);
+const codePath = '/thangs/test.zip';//process.argv[2];
 
-    const publishEvent = JSON.parse(Buffer.from(publishEventBase64, "base64"));
-    const requestRecord = JSON.parse(
-      Buffer.from(requestRecordBase64, "base64"),
-    );
+const dirPath = '/thangs/test_unzipped';
+decompress(codePath, dirPath).then((files) => {
+    console.log("HER ARE FILES from " + codePath + " to " + dirPath);
+    console.log(files);
+    const foundIndex = files.filter(f => f.type === 'file' && f.path.endsWith('index.js'))[0];
+    const squishVersion = parseSquishVersion(path.join(dirPath, foundIndex.path));
 
-    const { gameId, sourceInfoHash } = publishEvent;
-    const squishVersion = parseSquishVersion(codePath.path);
-
-    pokeCode(publishEvent, codePath, gameId, sourceInfoHash, squishVersion)
-      .then(() => {
-        console.log("just poked!!!");
-        writeExitMessage("success");
-      })
-      .catch((err) => {
-        console.log("errororor");
-        console.log(err);
-        writeExitMessage("ayylmao456");
-      });
+    pokeCode(foundIndex, dirPath, squishVersion)
+  .then(() => {
+    console.log("just poked!!! updated");
+    writeExitMessage("success");
+    process.exit(0);
   })
   .catch((err) => {
-    console.log("eroeroerer");
+    console.log("errororor");
     console.log(err);
+    writeExitMessage("ayylmao456");
   });
+});

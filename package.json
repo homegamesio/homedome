@@ -5,8 +5,11 @@
   "main": "index.js",
   "dependencies": {
     "acorn": "^8.11.3",
+    "amqplib": "^0.10.4",
     "archiver": "^5.3.0",
     "aws-sdk": "^2.939.0",
+    "decompress": "^4.2.1",
+    "mongodb": "^6.8.0",
     "squish-061": "npm:squishjs@0.6.1",
     "squish-063": "npm:squishjs@0.6.3",
     "squish-0631": "npm:squishjs@0.6.31",
@@ -21,7 +24,11 @@
     "squish-1004": "npm:squishjs@1.0.4",
     "squish-1005": "npm:squishjs@1.0.5",
     "squish-1006": "npm:squishjs@1.0.6",
-    "decompress": "^4.2.1"
+    "squish-1007": "npm:squishjs@1.0.7",
+    "squish-1008": "npm:squishjs@1.0.8",
+    "squish-1009": "npm:squishjs@1.0.9",
+    "squish-1010": "npm:squishjs@1.0.10",
+    "squish-110": "npm:squishjs@1.1.0"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
