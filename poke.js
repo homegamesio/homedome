@@ -181,7 +181,7 @@ decompress(codePath, dirPath).then((files) => {
     pokeCode(foundIndex, dirPath, squishVersion)
   .then(() => {
     console.log("just poked!!! updated");
-    writeExitMessage("success");
+    writeExitMessage("success-" + squishVersion);
     process.exit(0);
   })
   .catch((err) => {
